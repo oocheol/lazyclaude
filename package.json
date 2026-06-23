@@ -1,6 +1,6 @@
 {
   "name": "lazyclaude",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The one and only agent harness for complex codebases. Project memory, planning, execution, and verified completion inside Claude Code.",
   "main": "bin/lazyclaude.js",
   "bin": {

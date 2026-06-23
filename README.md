@@ -12,12 +12,18 @@
 
 ## Install
 
+**Option 1 — npx (no global install)**
 ```bash
 npx lazyclaude install
 ```
 
-Or install directly as a Claude Code plugin:
+**Option 2 — global install**
+```bash
+npm install -g lazyclaude
+lazyclaude install
+```
 
+**Option 3 — Claude Code plugin (git)**
 ```bash
 git clone https://github.com/oocheol/lazyclaude ~/.claude/plugins/lazyclaude
 ```
