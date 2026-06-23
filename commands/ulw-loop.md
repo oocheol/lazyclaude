@@ -1,3 +1,8 @@
+---
+description: Self-referential loop that runs a task until Oracle-verified completion (cap 100 iterations).
+argument-hint: "\"task\" [--completion-promise=TEXT] [--strategy=reset|continue]"
+---
+
 # /ulw-loop
 
 Run a task in a self-referential loop until Oracle-verified completion.

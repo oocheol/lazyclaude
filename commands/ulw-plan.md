@@ -1,3 +1,8 @@
+---
+description: Strategic planner — writes a decision-complete plan to plans/<slug>.md. Never writes product code.
+argument-hint: "\"what to build\""
+---
+
 # /ulw-plan
 
 Strategic planner. Writes a decision-complete plan before any code is touched.

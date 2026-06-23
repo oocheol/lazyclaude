@@ -1,3 +1,8 @@
+---
+description: Execute a plan until every checkbox is done. Prints ORCHESTRATION COMPLETE on success.
+argument-hint: "[plan-name]"
+---
+
 # /start-work
 
 Execute a plan until every checkbox is done. Prints **ORCHESTRATION COMPLETE** on success.

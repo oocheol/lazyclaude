@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 /**
  * lazyclaude installer CLI
- * Usage: npx lazyclaude install [--no-tui]
+ * Usage: npx lazyclaude <install|update|uninstall|doctor>
+ *
+ * Security: every external process is spawned with shell:false and an explicit
+ * argv array, so no path or env value is ever interpreted by a shell. This
+ * removes command-injection risk even if CLAUDE_CONFIG_DIR contains shell
+ * metacharacters or spaces.
  */
-const { execSync, spawnSync } = require("child_process");
+"use strict";
+
+const { spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -15,12 +22,26 @@ function claudeConfigDir() {
   return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
 }
 
-function pluginDir() {
-  return path.join(claudeConfigDir(), "plugins", PLUGIN_NAME);
+function pluginsRoot() {
+  return path.join(claudeConfigDir(), "plugins");
 }
 
-function run(cmd, opts = {}) {
-  return spawnSync(cmd, { shell: true, stdio: "inherit", ...opts });
+function pluginDir() {
+  return path.join(pluginsRoot(), PLUGIN_NAME);
+}
+
+/**
+ * Run a command with NO shell. `args` is an explicit argv array — never a
+ * concatenated string — so user-controlled paths cannot inject commands.
+ * Returns the spawnSync result; callers inspect `.status` and `.error`.
+ */
+function run(file, args, opts = {}) {
+  return spawnSync(file, args, { stdio: "inherit", shell: false, ...opts });
+}
+
+function hasGit() {
+  const probe = spawnSync("git", ["--version"], { stdio: "ignore", shell: false });
+  return !probe.error && probe.status === 0;
 }
 
 function install() {
@@ -32,19 +53,28 @@ function install() {
     return;
   }
 
-  console.log("Installing lazyclaude...");
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-
-  const result = run(`git clone --depth=1 ${REPO} "${dest}"`);
-  if (result.status !== 0) {
-    console.error("Clone failed. Check your internet connection.");
+  if (!hasGit()) {
+    console.error("git is required but was not found on PATH. Install git and retry.");
     process.exit(1);
   }
 
-  // Run setup
+  console.log("Installing lazyclaude...");
+  fs.mkdirSync(pluginsRoot(), { recursive: true });
+
+  const result = run("git", ["clone", "--depth=1", REPO, dest]);
+  if (result.error || result.status !== 0) {
+    console.error("Clone failed. Check your internet connection and that git is installed.");
+    process.exit(1);
+  }
+
+  // Run first-run setup, if present. Skip silently when bash is unavailable
+  // (e.g. a Windows host without Git Bash) — setup is non-essential.
   const setupScript = path.join(dest, "setup", "setup.sh");
   if (fs.existsSync(setupScript)) {
-    run(`bash "${setupScript}"`);
+    const setup = run("bash", [setupScript]);
+    if (setup.error) {
+      console.warn("Note: skipped setup.sh (bash not available). Plugin still works.");
+    }
   }
 
   console.log("\n✓ lazyclaude installed.");
@@ -61,8 +91,16 @@ function update() {
     console.log("lazyclaude not installed. Run: npx lazyclaude install");
     process.exit(1);
   }
+  if (!hasGit()) {
+    console.error("git is required but was not found on PATH.");
+    process.exit(1);
+  }
   console.log("Updating lazyclaude...");
-  run(`git -C "${dest}" pull --ff-only`);
+  const result = run("git", ["-C", dest, "pull", "--ff-only"]);
+  if (result.error || result.status !== 0) {
+    console.error("Update failed.");
+    process.exit(1);
+  }
   console.log("✓ Updated. Restart Claude Code to apply.");
 }
 
@@ -71,6 +109,13 @@ function uninstall() {
   if (!fs.existsSync(dest)) {
     console.log("lazyclaude not installed.");
     return;
+  }
+  // Safety guard: only ever remove the exact plugin directory. Refuse if the
+  // resolved path does not sit directly under <config>/plugins/lazyclaude.
+  const expected = path.resolve(pluginsRoot(), PLUGIN_NAME);
+  if (path.resolve(dest) !== expected) {
+    console.error(`Refusing to remove unexpected path: ${dest}`);
+    process.exit(1);
   }
   fs.rmSync(dest, { recursive: true, force: true });
   console.log("✓ lazyclaude uninstalled.");
@@ -89,17 +134,28 @@ function doctor() {
   const skills = fs.existsSync(skillsDir) ? fs.readdirSync(skillsDir) : [];
   console.log(`Skills: ${skills.length ? skills.join(", ") : "none"}`);
 
-  const configPath = path.join(claudeConfigDir(), "settings.json");
-  const hasConfig = fs.existsSync(configPath);
-  console.log(`settings.json: ${hasConfig ? "✓ exists" : "✗ missing"}`);
+  const agentsDir = path.join(dest, "agents");
+  const agents = fs.existsSync(agentsDir) ? fs.readdirSync(agentsDir) : [];
+  console.log(`Agents: ${agents.length ? agents.join(", ") : "none"}`);
+
+  console.log(`git: ${hasGit() ? "✓ available" : "✗ not found"}`);
+}
+
+function help() {
+  console.log("Usage: npx lazyclaude <install|update|uninstall|doctor>");
 }
 
 const cmd = process.argv[2] || "help";
 switch (cmd) {
   case "install": install(); break;
-  case "update":  update();  break;
+  case "update": update(); break;
   case "uninstall": uninstall(); break;
-  case "doctor":  doctor();  break;
+  case "doctor": doctor(); break;
+  case "help":
+  case "--help":
+  case "-h": help(); break;
   default:
-    console.log("Usage: npx lazyclaude <install|update|uninstall|doctor>");
+    console.error(`Unknown command: ${cmd}`);
+    help();
+    process.exit(1);
 }

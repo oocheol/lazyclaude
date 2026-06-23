@@ -1,3 +1,7 @@
+---
+description: Generate hierarchical CLAUDE.md project memory across the most complex directories.
+---
+
 # /init-deep
 
 Generate hierarchical project memory through CLAUDE.md files. Gives future agents landmarks before they edit.
