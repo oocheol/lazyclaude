@@ -3,7 +3,7 @@
 # Records a one-time marker so re-runs are cheap. The plugin itself needs no
 # build step — commands, skills, and agents are discovered by directory
 # convention once the repo lives under <config>/plugins/lazyclaude.
-set -uo pipefail
+set -euo pipefail
 
 PLUGIN="lazyclaude"
 

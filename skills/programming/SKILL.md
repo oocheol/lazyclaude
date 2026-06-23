@@ -14,7 +14,7 @@ description: >
 
 ### TypeScript
 - No `any` or `unknown` without a type guard
-- Prefer `Result<T, E>` pattern over throw for recoverable errors
+- Prefer explicit `{ ok: true, value } | { ok: false, error }` discriminated unions (or `neverthrow`) over throw for recoverable errors
 - Strict null checks — never `!` postfix unless the type system genuinely cannot express the invariant
 - Zod for runtime validation at system boundaries
 

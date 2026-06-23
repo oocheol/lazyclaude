@@ -17,11 +17,13 @@ Read the root directory. Identify:
 - Key directories (src, lib, tests, docs, scripts)
 
 ## Step 1 — Score directories
-For each non-trivial directory, compute a complexity score:
+Skip: `node_modules/`, `.git/`, `dist/`, `build/`, `out/`, `coverage/`, `.next/`, `__pycache__/`, `vendor/`, `target/` — generated or vendor dirs waste time and produce noise.
+
+For each remaining non-trivial directory, compute a complexity score:
 ```
 score = file_count × (1 + avg_nesting_depth) × language_diversity_factor
 ```
-Pick the top 8 directories (score > 10 or > 20 files).
+Pick the **top 8 by score** (minimum 3 source files to qualify). If fewer than 3 directories qualify, only write root CLAUDE.md.
 
 ## Step 2 — Write local CLAUDE.md files
 For each scored directory, read 3–5 representative files, then write a `CLAUDE.md`:

@@ -13,7 +13,7 @@ Execute a plan until every checkbox is done. Prints **ORCHESTRATION COMPLETE** o
 /start-work [plan-name]
 ```
 
-- `plan-name` — filename stem in `plans/` (e.g. `add-rate-limiting`). Omit to pick the most recent pending plan.
+- `plan-name` — filename stem in `plans/` (e.g. `add-rate-limiting`). Accepts with or without `.md` extension. Omit to auto-select: sort `plans/*.md` by modification time descending, pick the first whose content contains `Status: pending` or has at least one unchecked `- [ ]` box.
 
 ## Behavior
 

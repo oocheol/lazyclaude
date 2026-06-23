@@ -1,13 +1,23 @@
 {
   "name": "lazyclaude",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The one and only agent harness for complex codebases. Project memory, planning, execution, and verified completion inside Claude Code.",
   "main": "bin/lazyclaude.js",
   "bin": {
     "lazyclaude": "bin/lazyclaude.js"
   },
+  "files": [
+    "bin/",
+    "commands/",
+    "skills/",
+    "agents/",
+    "setup/setup.sh",
+    ".claude-plugin/",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
-    "test": "echo 'no unit tests yet'"
+    "test": "node --check bin/lazyclaude.js && bash -n setup/setup.sh && echo 'syntax OK'"
   },
   "keywords": [
     "claude-code",
@@ -20,6 +30,14 @@
   ],
   "author": "oocheol",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oocheol/lazyclaude.git"
+  },
+  "homepage": "https://github.com/oocheol/lazyclaude#readme",
+  "bugs": {
+    "url": "https://github.com/oocheol/lazyclaude/issues"
+  },
   "engines": {
     "node": ">=18"
   }

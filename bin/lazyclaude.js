@@ -17,6 +17,7 @@ const os = require("os");
 
 const REPO = "https://github.com/oocheol/lazyclaude.git";
 const PLUGIN_NAME = "lazyclaude";
+const PKG_VERSION = require("../package.json").version;
 
 function claudeConfigDir() {
   return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
@@ -96,12 +97,27 @@ function update() {
     process.exit(1);
   }
   console.log("Updating lazyclaude...");
+  const before = run("git", ["-C", dest, "rev-parse", "HEAD"], { stdio: "pipe" });
+  const beforeHash = before.stdout ? before.stdout.toString().trim() : "";
+
   const result = run("git", ["-C", dest, "pull", "--ff-only"]);
   if (result.error || result.status !== 0) {
-    console.error("Update failed.");
+    console.error("Update failed. If branches have diverged, reinstall: npx lazyclaude uninstall && npx lazyclaude install");
     process.exit(1);
   }
-  console.log("✓ Updated. Restart Claude Code to apply.");
+
+  const after = run("git", ["-C", dest, "rev-parse", "HEAD"], { stdio: "pipe" });
+  const afterHash = after.stdout ? after.stdout.toString().trim() : "";
+
+  if (beforeHash && afterHash && beforeHash === afterHash) {
+    console.log("✓ Already up to date.");
+  } else {
+    console.log("✓ Updated. Restart Claude Code to apply.");
+    // Show what changed
+    if (beforeHash && afterHash) {
+      run("git", ["-C", dest, "log", "--oneline", `${beforeHash}..${afterHash}`]);
+    }
+  }
 }
 
 function uninstall() {
@@ -121,39 +137,65 @@ function uninstall() {
   console.log("✓ lazyclaude uninstalled.");
 }
 
+function stripMd(name) {
+  return name.endsWith(".md") ? name.slice(0, -3) : name;
+}
+
 function doctor() {
   const dest = pluginDir();
-  console.log("lazyclaude doctor\n");
+  console.log(`lazyclaude v${PKG_VERSION} — doctor\n`);
   console.log(`Plugin dir: ${dest} — ${fs.existsSync(dest) ? "✓ exists" : "✗ missing"}`);
 
   const commandsDir = path.join(dest, "commands");
-  const commands = fs.existsSync(commandsDir) ? fs.readdirSync(commandsDir) : [];
-  console.log(`Commands: ${commands.length ? commands.join(", ") : "none"}`);
+  const commands = fs.existsSync(commandsDir)
+    ? fs.readdirSync(commandsDir).map(stripMd)
+    : [];
+  console.log(`Commands: ${commands.length ? commands.map(c => "/" + c).join(", ") : "none"}`);
 
   const skillsDir = path.join(dest, "skills");
   const skills = fs.existsSync(skillsDir) ? fs.readdirSync(skillsDir) : [];
   console.log(`Skills: ${skills.length ? skills.join(", ") : "none"}`);
 
   const agentsDir = path.join(dest, "agents");
-  const agents = fs.existsSync(agentsDir) ? fs.readdirSync(agentsDir) : [];
+  const agents = fs.existsSync(agentsDir)
+    ? fs.readdirSync(agentsDir).map(stripMd)
+    : [];
   console.log(`Agents: ${agents.length ? agents.join(", ") : "none"}`);
 
   console.log(`git: ${hasGit() ? "✓ available" : "✗ not found"}`);
+
+  // Show installed plugin version if available
+  const manifest = path.join(dest, ".claude-plugin", "plugin.json");
+  if (fs.existsSync(manifest)) {
+    try {
+      const v = JSON.parse(fs.readFileSync(manifest, "utf8")).version;
+      if (v) console.log(`Plugin version: ${v}`);
+    } catch {}
+  }
 }
 
 function help() {
+  console.log(`lazyclaude v${PKG_VERSION}`);
   console.log("Usage: npx lazyclaude <install|update|uninstall|doctor>");
+  console.log("");
+  console.log("Commands:");
+  console.log("  install    Clone plugin into ~/.claude/plugins/lazyclaude");
+  console.log("  update     Pull latest changes (shows changelog)");
+  console.log("  uninstall  Remove the plugin");
+  console.log("  doctor     Health check — plugin, commands, agents, git");
 }
 
 const cmd = process.argv[2] || "help";
 switch (cmd) {
-  case "install": install(); break;
-  case "update": update(); break;
+  case "install":   install();   break;
+  case "update":    update();    break;
   case "uninstall": uninstall(); break;
-  case "doctor": doctor(); break;
+  case "doctor":    doctor();    break;
   case "help":
   case "--help":
-  case "-h": help(); break;
+  case "-h":        help();      break;
+  case "--version":
+  case "-v":        console.log(`lazyclaude v${PKG_VERSION}`); break;
   default:
     console.error(`Unknown command: ${cmd}`);
     help();
