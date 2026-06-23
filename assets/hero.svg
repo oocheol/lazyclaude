@@ -1,0 +1,72 @@
+<svg width="100%" viewBox="0 0 680 370" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>LazyClaude architecture diagram</title>
+<desc>LazyClaude agent harness: Hephaestus executor, Oracle verifier, Explorer mapper in a verified loop. Bundled with insane-search WAF bypass engine Phase 0 through 3.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>
+  text { font-family: ui-sans-serif, system-ui, sans-serif; fill: #1a1a1a; }
+  .th { font-size: 14px; font-weight: 500; }
+  .ts { font-size: 12px; font-weight: 400; fill: #555; }
+  .box-purple rect { fill: #EEEDFE; stroke: #534AB7; }
+  .box-purple .th { fill: #3C3489; }
+  .box-purple .ts { fill: #534AB7; }
+  .box-teal rect { fill: #E1F5EE; stroke: #0F6E56; }
+  .box-teal .th { fill: #085041; }
+  .box-teal .ts { fill: #0F6E56; }
+  .box-blue rect { fill: #E6F1FB; stroke: #185FA5; }
+  .box-blue .th { fill: #0C447C; }
+  .box-blue .ts { fill: #185FA5; }
+  .box-amber rect { fill: #FAEEDA; stroke: #854F0B; }
+  .box-amber .th { fill: #633806; }
+  .box-amber .ts { fill: #854F0B; }
+  line, path { stroke: #888; }
+</style>
+<text x="340" y="44" class="th" text-anchor="middle" font-size="22" font-weight="500" style="fill:#1a1a1a">LazyClaude</text>
+<text x="340" y="68" class="ts" text-anchor="middle">Agent harness · planning · execution · verified completion</text>
+<line x1="40" y1="82" x2="640" y2="82" stroke="#ccc" stroke-width="0.5"/>
+<text x="40" y="106" class="ts">Agent loop</text>
+<g class="box-purple">
+  <rect x="40" y="116" width="165" height="54" rx="4" stroke-width="0.5"/>
+  <text x="122" y="138" class="th" text-anchor="middle">Hephaestus</text>
+  <text x="122" y="156" class="ts" text-anchor="middle">executor · opus-4-8</text>
+</g>
+<line x1="205" y1="143" x2="243" y2="143" stroke="#888" stroke-width="1" marker-end="url(#arrow)" fill="none"/>
+<g class="box-teal">
+  <rect x="245" y="116" width="165" height="54" rx="4" stroke-width="0.5"/>
+  <text x="327" y="138" class="th" text-anchor="middle">Oracle</text>
+  <text x="327" y="156" class="ts" text-anchor="middle">verifier · opus-4-8</text>
+</g>
+<line x1="410" y1="143" x2="448" y2="143" stroke="#888" stroke-width="1" marker-end="url(#arrow)" fill="none"/>
+<g class="box-blue">
+  <rect x="450" y="116" width="165" height="54" rx="4" stroke-width="0.5"/>
+  <text x="532" y="138" class="th" text-anchor="middle">Explorer</text>
+  <text x="532" y="156" class="ts" text-anchor="middle">mapper · sonnet-4-6</text>
+</g>
+<path d="M 532 170 Q 532 204 340 204 Q 148 204 122 170" fill="none" stroke="#888" stroke-width="1" stroke-dasharray="4 2" marker-end="url(#arrow)"/>
+<text x="340" y="220" class="ts" text-anchor="middle">VERIFIED → loop ends · NOT VERIFIED → retry</text>
+<line x1="40" y1="238" x2="640" y2="238" stroke="#ccc" stroke-width="0.5"/>
+<text x="40" y="262" class="ts">Bundled: insane-search (fivetaku/insane-search · MIT)</text>
+<g class="box-amber">
+  <rect x="40" y="272" width="132" height="52" rx="4" stroke-width="0.5"/>
+  <text x="106" y="294" class="th" text-anchor="middle">Phase 0</text>
+  <text x="106" y="312" class="ts" text-anchor="middle">Public API · RSS</text>
+</g>
+<line x1="172" y1="298" x2="192" y2="298" stroke="#888" stroke-width="1" marker-end="url(#arrow)" fill="none"/>
+<g class="box-amber">
+  <rect x="194" y="272" width="132" height="52" rx="4" stroke-width="0.5"/>
+  <text x="260" y="294" class="th" text-anchor="middle">Phase 1</text>
+  <text x="260" y="312" class="ts" text-anchor="middle">curl_cffi · Jina</text>
+</g>
+<line x1="326" y1="298" x2="346" y2="298" stroke="#888" stroke-width="1" marker-end="url(#arrow)" fill="none"/>
+<g class="box-amber">
+  <rect x="348" y="272" width="132" height="52" rx="4" stroke-width="0.5"/>
+  <text x="414" y="294" class="th" text-anchor="middle">Phase 2</text>
+  <text x="414" y="312" class="ts" text-anchor="middle">Browser identity</text>
+</g>
+<line x1="480" y1="298" x2="500" y2="298" stroke="#888" stroke-width="1" marker-end="url(#arrow)" fill="none"/>
+<g class="box-amber">
+  <rect x="502" y="272" width="138" height="52" rx="4" stroke-width="0.5"/>
+  <text x="571" y="294" class="th" text-anchor="middle">Phase 3</text>
+  <text x="571" y="312" class="ts" text-anchor="middle">Playwright · headless</text>
+</g>
+<text x="340" y="350" class="ts" text-anchor="middle">github.com/oocheol/lazyclaude · MIT</text>
+</svg>

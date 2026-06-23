@@ -2,6 +2,7 @@
   <h1>LazyClaude</h1>
   <p><strong>The one and only agent harness for complex codebases.</strong><br />
   Project memory, planning, execution, and verified completion inside Claude Code.</p>
+  <img src="assets/hero.svg" alt="LazyClaude architecture — agent loop and insane-search pipeline" width="100%" />
   <p>
     <a href="https://github.com/oocheol/lazyclaude">GitHub</a> ·
     <a href="#insane-search-web-bypass-engine">insane-search</a> ·
