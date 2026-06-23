@@ -70,6 +70,8 @@ Three discipline agents work together:
 
 ## Model Routing
 
+모델은 desktop에서 선택한 모델과 **무관하게** Agent 툴의 `model` 파라미터로 강제 지정됩니다. Sonnet으로 실행해도 내부에서 Opus/Haiku가 실제 호출됩니다.
+
 | Task | Model |
 |------|-------|
 | Complex code, planning, verification | `claude-opus-4-8` |

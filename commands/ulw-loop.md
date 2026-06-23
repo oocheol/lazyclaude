@@ -20,20 +20,15 @@ Run a task in a self-referential loop until Oracle-verified completion.
 - `--strategy=reset` — restart from scratch on failure (default)
 - `--strategy=continue` — resume from last checkpoint on failure
 
-## Behavior
-
-1. **Hephaestus** (executor agent, model: claude-opus-4-8) carries out the task
-2. **Oracle** (verifier agent, model: claude-opus-4-8 with extended thinking) judges completion against the completion promise
-3. Loop continues until Oracle returns `VERIFIED` or iteration cap (100) is reached
-4. Progress saved to `plans/.ulw-state.json` between iterations
-
 ## Model Routing
+
+모델은 desktop에서 선택한 모델과 무관하게 Agent 툴로 강제 지정됩니다.
 
 | Role | Model | Reason |
 |------|-------|--------|
 | Executor (Hephaestus) | `claude-opus-4-8` | Complex code changes |
-| Verifier (Oracle) | `claude-opus-4-8` + thinking | Reliable verification |
-| Subtasks | `claude-haiku-4-5` | Fast, cheap parallel work |
+| Verifier (Oracle) | `claude-opus-4-8` | Reliable verification |
+| Parallel subtasks | `claude-haiku-4-5` | Fast, cheap parallel work |
 
 ## Example
 
@@ -43,28 +38,65 @@ Run a task in a self-referential loop until Oracle-verified completion.
 
 ## Implementation
 
-When invoked:
+When invoked, execute the following loop (max 100 iterations):
 
-1. Read `plans/.ulw-state.json` if it exists (resume mode)
-2. Spawn Hephaestus with the task + iteration context
-3. After each execution, spawn Oracle with:
-   - The task description
-   - The completion promise (or derive one from the task)
-   - Evidence: test output, lint output, git diff summary
-4. If Oracle says `VERIFIED`: print `ULTRAWORK COMPLETE ✓` and exit
-5. If Oracle says `NOT_VERIFIED <reason>`: increment iteration, update state, loop
-6. If strategy=reset and iteration > 3: clear working state before next attempt
+**Step 1 — Read state**
 
-Oracle prompt template:
+Check if `plans/.ulw-state.json` exists. If so, load iteration count and previous failure reason.
+
+**Step 2 — Spawn Hephaestus (executor)**
+
+Use the Agent tool with model override:
+
 ```
-You are Oracle, a strict completion verifier. Given:
-- Task: {task}
-- Completion promise: {promise}
-- Evidence: {evidence}
+Agent(
+  model: "opus",
+  description: "Hephaestus executor — iteration {n}",
+  prompt: |
+    You are Hephaestus, the executor. Your only job is to complete the task below.
+    Do not verify. Do not summarize. Just do the work and report what you changed.
 
-Reply with exactly one of:
-VERIFIED
-NOT_VERIFIED: <specific gap>
+    Task: {task}
+    Completion promise: {promise}
+    Previous failure reason (if any): {failure_reason}
+    Strategy: {strategy}
 
-Do not suggest. Do not explain beyond the verdict.
+    After completing, output:
+    CHANGES: <brief summary of what you did>
+    EVIDENCE: <command output, test results, or diff that proves the work>
+)
 ```
+
+**Step 3 — Collect evidence**
+
+Gather verification evidence from Hephaestus output: test results, lint output, git diff.
+
+**Step 4 — Spawn Oracle (verifier)**
+
+Use the Agent tool with model override:
+
+```
+Agent(
+  model: "opus",
+  description: "Oracle verifier — iteration {n}",
+  prompt: |
+    You are Oracle, a strict completion verifier.
+
+    Task: {task}
+    Completion promise: {promise}
+    Evidence: {evidence}
+
+    Reply with exactly one of:
+    VERIFIED
+    NOT_VERIFIED: <specific gap>
+
+    Do not suggest. Do not explain beyond the verdict.
+)
+```
+
+**Step 5 — Branch on verdict**
+
+- `VERIFIED` → print `ULTRAWORK COMPLETE ✓` and exit
+- `NOT_VERIFIED: <reason>` → save state to `plans/.ulw-state.json`, increment iteration, go to Step 2
+- If `strategy=reset` and iteration > 3: prompt Hephaestus to reconsider approach from scratch
+- If iteration reaches 100: print `ITERATION CAP REACHED` and exit
