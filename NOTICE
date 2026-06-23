@@ -1,6 +1,17 @@
-LazyClaude includes code from the following MIT-licensed projects:
+LazyClaude includes or derives from the following open-source projects:
 
 insane-search (skills/insane-search/)
   Copyright (c) 2026 fivetaku
   https://github.com/fivetaku/insane-search
   MIT License
+
+LazyCodex
+  Copyright (c) 2026 Yeongyu Kim
+  https://github.com/code-yeongyu/lazycodex
+  MIT License
+  (structural inspiration — agent harness pattern and plugin layout)
+
+OmO / oh-my-openagent
+  Copyright (c) code-yeongyu
+  https://github.com/code-yeongyu/oh-my-openagent
+  (conceptual reference — open-agent orchestration model)
