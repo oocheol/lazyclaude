@@ -86,12 +86,39 @@ function install() {
     }
   }
 
+  linkCommands(dest);
+
   console.log("\n✓ lazyclaude installed.");
   console.log("Restart Claude Code to activate. Commands available:");
   console.log("  /ulw-loop   — verified completion loop");
   console.log("  /ulw-plan   — write a plan before coding");
   console.log("  /start-work — execute a plan");
   console.log("  /init-deep  — generate project memory");
+}
+
+function claudeCommandsDir() {
+  return path.join(claudeConfigDir(), "commands");
+}
+
+function linkCommands(pluginDest) {
+  const srcDir = path.join(pluginDest, "commands");
+  if (!fs.existsSync(srcDir)) return;
+  fs.mkdirSync(claudeCommandsDir(), { recursive: true });
+  for (const file of fs.readdirSync(srcDir)) {
+    if (!file.endsWith(".md")) continue;
+    const dest = path.join(claudeCommandsDir(), file);
+    if (fs.existsSync(dest)) continue;
+    fs.copyFileSync(path.join(srcDir, file), dest);
+  }
+}
+
+function unlinkCommands(pluginDest) {
+  const srcDir = path.join(pluginDest, "commands");
+  if (!fs.existsSync(srcDir)) return;
+  for (const file of fs.readdirSync(srcDir)) {
+    const target = path.join(claudeCommandsDir(), file);
+    if (fs.existsSync(target)) fs.rmSync(target);
+  }
 }
 
 function updateBundled(pluginDest) {
@@ -157,6 +184,8 @@ function update() {
     }
   }
 
+  unlinkCommands(dest);
+  linkCommands(dest);
   updateBundled(dest);
 }
 
@@ -173,6 +202,7 @@ function uninstall() {
     console.error(`Refusing to remove unexpected path: ${dest}`);
     process.exit(1);
   }
+  unlinkCommands(dest);
   fs.rmSync(dest, { recursive: true, force: true });
   console.log("✓ lazyclaude uninstalled.");
 }
