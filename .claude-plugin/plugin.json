@@ -1,0 +1,22 @@
+{
+  "name": "lazyclaude",
+  "version": "0.1.0",
+  "description": "The one and only agent harness for complex codebases. Project memory, planning, execution, and verified completion inside Claude Code.",
+  "author": {
+    "name": "oocheol",
+    "url": "https://github.com/oocheol"
+  },
+  "homepage": "https://github.com/oocheol/lazyclaude",
+  "repository": "https://github.com/oocheol/lazyclaude",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "agent",
+    "harness",
+    "planning",
+    "memory",
+    "orchestration",
+    "ultrawork",
+    "verified-completion"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "lazyclaude",
+  "version": "0.1.0",
+  "description": "The one and only agent harness for complex codebases. Project memory, planning, execution, and verified completion inside Claude Code.",
+  "main": "bin/lazyclaude.js",
+  "bin": {
+    "lazyclaude": "bin/lazyclaude.js"
+  },
+  "scripts": {
+    "test": "echo 'no unit tests yet'"
+  },
+  "keywords": [
+    "claude-code",
+    "agent",
+    "harness",
+    "llm",
+    "ai",
+    "planning",
+    "verified-completion"
+  ],
+  "author": "oocheol",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
