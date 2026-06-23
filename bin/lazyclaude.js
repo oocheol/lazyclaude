@@ -16,6 +16,14 @@ const path = require("path");
 const os = require("os");
 
 const REPO = "https://github.com/oocheol/lazyclaude.git";
+const BUNDLED_REPOS = [
+  {
+    name: "insane-search",
+    repo: "https://github.com/fivetaku/insane-search.git",
+    sparsePath: "skills/insane-search",
+    destSubdir: "skills/insane-search",
+  },
+];
 const PLUGIN_NAME = "lazyclaude";
 const PKG_VERSION = require("../package.json").version;
 
@@ -86,6 +94,37 @@ function install() {
   console.log("  /init-deep  — generate project memory");
 }
 
+function updateBundled(pluginDest) {
+  const os = require("os");
+  for (const bundle of BUNDLED_REPOS) {
+    console.log(`Updating bundled: ${bundle.name}...`);
+    const tmpDir = path.join(os.tmpdir(), `lazyclaude-${bundle.name}-${Date.now()}`);
+    try {
+      const clone = run("git", ["clone", "--depth=1", "--filter=blob:none", "--sparse", bundle.repo, tmpDir]);
+      if (clone.error || clone.status !== 0) {
+        console.warn(`  Warning: could not update ${bundle.name} (clone failed). Skipping.`);
+        continue;
+      }
+      const checkout = run("git", ["-C", tmpDir, "sparse-checkout", "set", bundle.sparsePath]);
+      if (checkout.error || checkout.status !== 0) {
+        console.warn(`  Warning: could not update ${bundle.name} (sparse-checkout failed). Skipping.`);
+        continue;
+      }
+      const srcPath = path.join(tmpDir, bundle.sparsePath);
+      const destPath = path.join(pluginDest, bundle.destSubdir);
+      if (!fs.existsSync(srcPath)) {
+        console.warn(`  Warning: ${bundle.sparsePath} not found in ${bundle.name}. Skipping.`);
+        continue;
+      }
+      fs.rmSync(destPath, { recursive: true, force: true });
+      fs.cpSync(srcPath, destPath, { recursive: true });
+      console.log(`  ✓ ${bundle.name} updated.`);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
+}
+
 function update() {
   const dest = pluginDir();
   if (!fs.existsSync(dest)) {
@@ -113,11 +152,12 @@ function update() {
     console.log("✓ Already up to date.");
   } else {
     console.log("✓ Updated. Restart Claude Code to apply.");
-    // Show what changed
     if (beforeHash && afterHash) {
       run("git", ["-C", dest, "log", "--oneline", `${beforeHash}..${afterHash}`]);
     }
   }
+
+  updateBundled(dest);
 }
 
 function uninstall() {
