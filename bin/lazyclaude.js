@@ -72,6 +72,7 @@ function install() {
 
   const result = run("git", ["clone", "--depth=1", REPO, dest]);
   if (result.error || result.status !== 0) {
+    fs.rmSync(dest, { recursive: true, force: true });
     console.error("Clone failed. Check your internet connection and that git is installed.");
     process.exit(1);
   }
