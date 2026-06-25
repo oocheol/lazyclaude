@@ -232,9 +232,20 @@ function doctor() {
 
   const commandsDir = path.join(dest, "commands");
   const commands = fs.existsSync(commandsDir)
-    ? fs.readdirSync(commandsDir).map(stripMd)
+    ? fs.readdirSync(commandsDir).filter(f => f.endsWith(".md")).map(stripMd)
     : [];
-  console.log(`Commands: ${commands.length ? commands.map(c => "/" + c).join(", ") : "none"}`);
+  console.log(`Commands (plugin): ${commands.length ? commands.map(c => "/" + c).join(", ") : "none"}`);
+
+  const installedCmdDir = claudeCommandsDir();
+  const installedCmds = commands.filter(c =>
+    fs.existsSync(path.join(installedCmdDir, c + ".md"))
+  );
+  const missingCmds = commands.filter(c => !installedCmds.includes(c));
+  console.log(`Commands (active): ${installedCmds.length ? installedCmds.map(c => "/" + c).join(", ") : "none"}`);
+  if (missingCmds.length) {
+    console.log(`  ✗ Not installed in ${installedCmdDir}: ${missingCmds.map(c => "/" + c).join(", ")}`);
+    console.log(`  Run 'npx lazyclaude update' to fix.`);
+  }
 
   const skillsDir = path.join(dest, "skills");
   const skills = fs.existsSync(skillsDir) ? fs.readdirSync(skillsDir) : [];
