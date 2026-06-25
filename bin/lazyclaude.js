@@ -100,13 +100,19 @@ function claudeCommandsDir() {
   return path.join(claudeConfigDir(), "commands");
 }
 
+function isSafeFilename(name) {
+  // Allow only plain filenames — no path separators or traversal sequences.
+  return name === path.basename(name) && !name.includes("..") && name.length > 0;
+}
+
 function linkCommands(pluginDest) {
   const srcDir = path.join(pluginDest, "commands");
   if (!fs.existsSync(srcDir)) return;
-  fs.mkdirSync(claudeCommandsDir(), { recursive: true });
+  const cmdDir = claudeCommandsDir();
+  fs.mkdirSync(cmdDir, { recursive: true });
   for (const file of fs.readdirSync(srcDir)) {
-    if (!file.endsWith(".md")) continue;
-    const dest = path.join(claudeCommandsDir(), file);
+    if (!file.endsWith(".md") || !isSafeFilename(file)) continue;
+    const dest = path.join(cmdDir, file);
     if (fs.existsSync(dest)) continue;
     fs.copyFileSync(path.join(srcDir, file), dest);
   }
@@ -115,9 +121,13 @@ function linkCommands(pluginDest) {
 function unlinkCommands(pluginDest) {
   const srcDir = path.join(pluginDest, "commands");
   if (!fs.existsSync(srcDir)) return;
+  const cmdDir = claudeCommandsDir();
   for (const file of fs.readdirSync(srcDir)) {
-    const target = path.join(claudeCommandsDir(), file);
-    if (fs.existsSync(target)) fs.rmSync(target);
+    if (!isSafeFilename(file)) continue;
+    const target = path.join(cmdDir, file);
+    if (path.resolve(target).startsWith(path.resolve(cmdDir) + path.sep) && fs.existsSync(target)) {
+      fs.rmSync(target);
+    }
   }
 }
 
