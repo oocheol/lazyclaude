@@ -132,7 +132,6 @@ function unlinkCommands(pluginDest) {
 }
 
 function updateBundled(pluginDest) {
-  const os = require("os");
   for (const bundle of BUNDLED_REPOS) {
     console.log(`Updating bundled: ${bundle.name}...`);
     const tmpDir = path.join(os.tmpdir(), `lazyclaude-${bundle.name}-${Date.now()}`);
@@ -148,7 +147,11 @@ function updateBundled(pluginDest) {
         continue;
       }
       const srcPath = path.join(tmpDir, bundle.sparsePath);
-      const destPath = path.join(pluginDest, bundle.destSubdir);
+      const destPath = path.resolve(pluginDest, bundle.destSubdir);
+      if (!destPath.startsWith(path.resolve(pluginDest) + path.sep)) {
+        console.warn(`  Warning: refusing unsafe destSubdir for ${bundle.name}. Skipping.`);
+        continue;
+      }
       if (!fs.existsSync(srcPath)) {
         console.warn(`  Warning: ${bundle.sparsePath} not found in ${bundle.name}. Skipping.`);
         continue;
