@@ -46,7 +46,7 @@ _Created: <date> | Status: pending_
 
 ## Model
 
-Uses `claude-opus-4-8` with thinking enabled for deep analysis before writing the plan.
+Uses `opus` with thinking enabled for deep analysis before writing the plan.
 
 ## Example
 

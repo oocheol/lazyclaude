@@ -3,4 +3,8 @@ node_modules/
 *.log
 *.tgz
 .testcfg/
+__pycache__/
+*.py[cod]
+.pytest_cache/
 plans/.ulw-state.json
+plans/.ulw-state-*.json

@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import threading
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from urllib.parse import urlsplit
@@ -35,6 +37,23 @@ EVICT_AFTER_FAILS = 2
 # Everything else (rate_limited / unknown / budget / auth_required / not_found /
 # success / "") is transient or URL-level and never strikes the route.
 PENALIZE_REASONS = frozenset({"exhausted", "challenge", "blocked"})
+
+# Protect load-modify-save transactions within this process.  Unique temp
+# files plus os.replace keep readers from observing partial JSON.  This is not
+# a cross-process locking protocol; concurrent separate processes remain
+# last-writer-wins by design because learning is best-effort.
+_LOCKS_GUARD = threading.Lock()
+_PATH_LOCKS: dict[str, threading.RLock] = {}
+
+
+def _path_lock(path: str) -> threading.RLock:
+    key = os.path.abspath(path)
+    with _LOCKS_GUARD:
+        lock = _PATH_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _PATH_LOCKS[key] = lock
+        return lock
 
 
 def enabled() -> bool:
@@ -77,7 +96,11 @@ def _prune(data: dict, now: Optional[datetime] = None) -> dict:
     cutoff = now - timedelta(days=TTL_DAYS)
     kept = {}
     for k, v in data.items():
-        lu = _parse(v.get("last_used", "")) if isinstance(v, dict) else None
+        # Ignore malformed top-level values.  Keeping them used to make the
+        # over-cap LRU sort call ``.get`` on a non-dict and crash load().
+        if not isinstance(v, dict):
+            continue
+        lu = _parse(v.get("last_used", ""))
         if lu is None or lu >= cutoff:
             kept[k] = v
     if len(kept) > MAX_ENTRIES:
@@ -91,32 +114,54 @@ def _prune(data: dict, now: Optional[datetime] = None) -> dict:
     return kept
 
 
+def _counter(value, default: int = 0) -> int:
+    """Best-effort non-negative integer for data loaded from untrusted JSON."""
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
 def load(path: Optional[str] = None) -> dict:
     """Load the store, pruning TTL-expired + over-cap entries in memory.
 
     Pruning is not persisted here (write-on-read is wasteful); the next
     `record_*` save writes the pruned set back, so the file converges."""
     path = path or default_path()
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
+    with _path_lock(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                return {}
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {}
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return {}
-    return _prune(data)
+        return _prune(data)
 
 
 def save(data: dict, path: Optional[str] = None) -> None:
     path = path or default_path()
-    try:
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        tmp = f"{path}.tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
-        os.replace(tmp, path)
-    except OSError:
-        pass  # learning is best-effort; never break a fetch on a write error
+    tmp = ""
+    with _path_lock(path):
+        try:
+            directory = os.path.dirname(path) or "."
+            os.makedirs(directory, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.", suffix=".tmp", dir=directory)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except OSError:
+            pass  # learning is best-effort; never break a fetch on a write error
+        finally:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    pass
 
 
 def lookup(url: str, device_class: str, path: Optional[str] = None,
@@ -135,20 +180,21 @@ def record_success(url: str, device_class: str, route: dict,
                    path: Optional[str] = None) -> None:
     """Upsert the winning route for this host (resets the failure strike)."""
     path = path or default_path()
-    data = load(path)
-    k = key_for(url, device_class)
-    now = _now().isoformat()
-    raw = data.get(k)
-    entry = raw if isinstance(raw, dict) else {}
-    same = entry.get("route") == route
-    data[k] = {
-        "route": route,
-        "wins": int(entry.get("wins", 0)) + 1 if same else 1,
-        "consecutive_fails": 0,
-        "last_used": now,
-        "last_success": now,
-    }
-    save(_prune(data), path)
+    with _path_lock(path):
+        data = load(path)
+        k = key_for(url, device_class)
+        now = _now().isoformat()
+        raw = data.get(k)
+        entry = raw if isinstance(raw, dict) else {}
+        same = entry.get("route") == route
+        data[k] = {
+            "route": route,
+            "wins": _counter(entry.get("wins")) + 1 if same else 1,
+            "consecutive_fails": 0,
+            "last_used": now,
+            "last_success": now,
+        }
+        save(_prune(data), path)
 
 
 def record_failure(url: str, device_class: str, penalize: bool,
@@ -160,16 +206,17 @@ def record_failure(url: str, device_class: str, penalize: bool,
     issue) just refreshes `last_used` so an actively-retried host is not
     TTL-pruned. No-op when nothing was learned for this host."""
     path = path or default_path()
-    data = load(path)
-    k = key_for(url, device_class)
-    entry = data.get(k)
-    if not isinstance(entry, dict):
-        return
-    if penalize:
-        entry["consecutive_fails"] = int(entry.get("consecutive_fails", 0)) + 1
-        entry["last_used"] = _now().isoformat()
-        if entry["consecutive_fails"] >= EVICT_AFTER_FAILS:
-            del data[k]
-    else:
-        entry["last_used"] = _now().isoformat()
-    save(_prune(data), path)
+    with _path_lock(path):
+        data = load(path)
+        k = key_for(url, device_class)
+        entry = data.get(k)
+        if not isinstance(entry, dict):
+            return
+        if penalize:
+            entry["consecutive_fails"] = _counter(entry.get("consecutive_fails")) + 1
+            entry["last_used"] = _now().isoformat()
+            if entry["consecutive_fails"] >= EVICT_AFTER_FAILS:
+                del data[k]
+        else:
+            entry["last_used"] = _now().isoformat()
+        save(_prune(data), path)

@@ -1,0 +1,5 @@
+# Python bytecode and test caches must never be published, even though the
+# root package allowlist includes the whole skills tree.
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/

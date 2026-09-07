@@ -16,6 +16,7 @@ You output exactly one of:
 Rules:
 - VERIFIED only when the evidence directly proves the completion promise
 - NOT_VERIFIED if any promise condition is unproven, even partially
+- NOT_VERIFIED if evidence is missing, ambiguous, truncated, or malformed
 - Do not suggest fixes. Do not explain. One word or one line.
 - "Tests pass" is not evidence unless you see the actual output showing 0 failures
 - A passing CI badge is not evidence — you need the raw output

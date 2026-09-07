@@ -32,21 +32,28 @@ from urllib.parse import urlsplit
 
 # --- low-level helpers -------------------------------------------------------
 def _cffi_get(url: str, *, impersonate: str = "safari", timeout: int = 15):
-    from curl_cffi import requests as r  # lazy: engine works even if missing
-    return r.get(
+    # Use the common guarded transport so the official-route shortcut cannot
+    # silently follow a redirect into an internal address.
+    from .transport import POOL
+    resp, err = POOL.request(
         url,
-        impersonate=impersonate,  # type: ignore[arg-type]
+        impersonate=impersonate,
         timeout=timeout,
-        headers={
+        extra_headers={
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
         },
-        allow_redirects=True,
     )
+    if err is not None or resp is None:
+        raise RuntimeError(err or "no response")
+    return resp
 
 
 def _host(url: str) -> str:
-    h = (urlsplit(url).hostname or "").lower()
+    try:
+        h = (urlsplit(url).hostname or "").lower().rstrip(".")
+    except (TypeError, ValueError):
+        return ""
     return h[4:] if h.startswith("www.") else h  # strip the literal "www." prefix only
 
 
@@ -60,11 +67,11 @@ def _detect(url: str) -> Optional[str]:
     h = _host(url)
     if not h:
         return None
-    if "reddit.com" in h or h == "redd.it":
+    if h == "reddit.com" or h.endswith(".reddit.com") or h == "redd.it" or h.endswith(".redd.it"):
         return "reddit"
     if h in ("x.com", "twitter.com") or h.endswith(".x.com") or h.endswith(".twitter.com"):
         return "x"
-    if "youtube.com" in h or h == "youtu.be":
+    if h == "youtube.com" or h.endswith(".youtube.com") or h == "youtu.be" or h.endswith(".youtu.be"):
         return "youtube"
     return None
 
@@ -190,4 +197,19 @@ def route(url: str, *, timeout: int = 15) -> Optional[dict]:
     platform = _detect(url)
     if platform is None:
         return None
+    # yt-dlp and future non-curl Phase-0 executors do not share curl_cffi's
+    # guarded redirect walker.  At minimum, require the user-supplied platform
+    # URL to pass the common preflight before invoking any router.  This is not
+    # a guarantee about redirects or subresources fetched by an external tool.
+    from . import safety
+    ok, reason = safety.classify_url(url, safety.allow_private_default())
+    if not ok:
+        return {
+            "platform": platform,
+            "ok": False,
+            "route": None,
+            "content": "",
+            "final_url": url,
+            "attempts": [_attempt(platform, "safety", False, 0, "", reason)],
+        }
     return _ROUTERS[platform](url, timeout)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
 from engine import learning
@@ -157,6 +158,46 @@ r_browser = FetchResult(ok=True, trace=[
 ])
 check("winning_route_skips_browser", _winning_route(r_browser) is None,
       "browser-only win is not learnable (None)")
+
+# 10) malformed cache values are ignored/coerced rather than crashing
+p = _tmp()
+old_max = learning.MAX_ENTRIES
+learning.MAX_ENTRIES = 2
+now_s = datetime.now(timezone.utc).isoformat()
+learning.save({
+    "broken": "not-an-entry",
+    learning.key_for(U, "desktop"): {
+        "route": ROUTE_A, "wins": "not-a-number", "consecutive_fails": "bad",
+        "last_used": now_s, "last_success": now_s,
+    },
+    "other::desktop": {
+        "route": ROUTE_B, "wins": 1, "consecutive_fails": 0,
+        "last_used": now_s, "last_success": now_s,
+    },
+}, path=p)
+data = learning.load(p)
+check("malformed_entry_pruned", "broken" not in data and len(data) == 2,
+      f"non-dict ignored under LRU pruning (keys={list(data)})")
+learning.record_success(U, "desktop", ROUTE_A, path=p)
+data = learning.load(p)
+check("malformed_counter_coerced", data[k]["wins"] == 1,
+      f"invalid wins coerced safely (wins={data[k]['wins']})")
+learning.MAX_ENTRIES = old_max
+
+# 11) one-process load/modify/save is serialized; updates are not lost
+p = _tmp()
+workers = 8
+per_worker = 20
+with ThreadPoolExecutor(max_workers=workers) as pool:
+    futures = [pool.submit(
+        lambda: [learning.record_success(U, "desktop", ROUTE_A, path=p)
+                 for _ in range(per_worker)]
+    ) for _ in range(workers)]
+    for future in futures:
+        future.result()
+data = learning.load(p)
+check("concurrent_success_updates", data[k]["wins"] == workers * per_worker,
+      f"serialized {workers * per_worker} in-process updates (wins={data[k]['wins']})")
 
 print(f"\n{_passed} passed, {_failed} failed")
 import sys

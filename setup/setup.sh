@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # First-run setup for lazyclaude. Idempotent, non-blocking.
-# Records a one-time marker so re-runs are cheap. The plugin itself needs no
-# build step — commands, skills, and agents are discovered by directory
-# convention once the repo lives under <config>/plugins/lazyclaude.
+# Records an optional one-time marker so re-runs are cheap. The plugin has no
+# build or activation step: Claude Code loads it when explicitly supplied via
+# `claude --plugin-dir <path>` (or through the installer run command).
 set -euo pipefail
 
 PLUGIN="lazyclaude"

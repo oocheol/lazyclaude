@@ -98,7 +98,9 @@ def _line_is_exempt(line: str, ext: str) -> bool:
 def _scan_file(path: Path, root: Path) -> list[str]:
     """Return list of violation strings for this file."""
     rel = path.relative_to(root.parent)
-    if str(rel) in EXPLICIT_ALLOW_FILES:
+    # EXPLICIT_ALLOW_FILES uses repository-style separators so it behaves the
+    # same on Windows and POSIX CI hosts.
+    if rel.as_posix() in EXPLICIT_ALLOW_FILES:
         return []
 
     ext = path.suffix.lower()

@@ -16,15 +16,16 @@ No arguments. Operates on the current working directory.
 
 ## Behavior
 
-1. Score directories by complexity (file count × avg depth × language diversity)
-2. For the top-N most complex directories (N = min(10, dirs > threshold)):
+1. Skip generated and vendor directories: `node_modules/`, `.git/`, `dist/`, `build/`, `out/`, `coverage/`, `.next/`, `__pycache__/`, `vendor/`, and `target/`. Score each remaining directory with at least 3 source files as `file count × (1 + average nesting depth) × language-diversity factor`.
+2. For the top 8 directories by score (or only the root when fewer than 3 qualify):
    - Read representative source files
-   - Write a `CLAUDE.md` in that directory explaining:
+   - If a `CLAUDE.md` already exists, read it first and preserve its authored instructions. Update it only with clearly stale or missing factual context; otherwise leave it unchanged and report it as preserved. Write a new `CLAUDE.md` only where none exists.
+   - A new or safely updated `CLAUDE.md` explains:
      - Purpose of the directory
      - Key files and what they do
      - Patterns and conventions specific to this area
      - Common pitfalls
-3. Update or create the root `CLAUDE.md` with:
+3. For the root `CLAUDE.md`, apply the same read-first, preserve-authored-content rule; never replace a human-authored file wholesale.
    - Project overview
    - Architecture summary
    - Entry points
@@ -48,4 +49,4 @@ No arguments. Operates on the current working directory.
 
 ## Model
 
-Uses `claude-opus-4-8` for analysis. Parallelizes directory scoring with `claude-haiku-4-5`.
+Uses `opus` for analysis. Parallelizes directory scoring with `haiku`.

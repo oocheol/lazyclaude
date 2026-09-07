@@ -6,9 +6,14 @@ option). Since this engine fetches attacker-influenced URLs and follows their
 redirects, a hostile page could redirect to loopback, RFC-1918, link-local, or
 the cloud metadata endpoint (169.254.169.254) to exfiltrate internal data.
 
-This module provides a pure, deterministic classifier and a redirect resolver.
+This module provides a URL classifier and a redirect resolver.  Hostname
+classification depends on DNS and therefore is intentionally fail-closed.
 Default-deny for private/internal targets; opt in with allow_private=True
 (env INSANE_ALLOW_PRIVATE=1) for local testing.
+
+Important limit: resolving here and connecting later does not pin the resolved
+address.  It narrows the SSRF surface, but cannot by itself prevent DNS
+rebinding between the check and curl's connection.
 """
 from __future__ import annotations
 
@@ -22,22 +27,31 @@ DEFAULT_MAX_REDIRECTS = 10
 
 
 def allow_private_default() -> bool:
-    return os.environ.get("INSANE_ALLOW_PRIVATE", "") in ("1", "true", "yes")
+    return os.environ.get("INSANE_ALLOW_PRIVATE", "").lower() in ("1", "true", "yes")
 
 
 def _ip_blocked(ip_str: str) -> bool:
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
-        return False
-    return (ip.is_private or ip.is_loopback or ip.is_link_local
-            or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
+        # Resolver output is data from outside this module.  If it is not an
+        # address we can classify, fail closed rather than treating it public.
+        return True
+    # Permit only globally-routable unicast addresses.  In particular,
+    # 100.64.0.0/10 (carrier-grade NAT/shared address space) is neither
+    # ``private`` nor ``reserved`` in Python's ipaddress module, but it is not
+    # globally reachable and must not be usable as an SSRF target.
+    return (not ip.is_global or ip.is_private or ip.is_loopback
+            or ip.is_link_local or ip.is_reserved or ip.is_multicast
+            or ip.is_unspecified)
 
 
 def classify_url(url: str, allow_private: bool = False) -> tuple[bool, str]:
     """(is_safe, reason). Blocks non-http(s) schemes and hosts that are — or
     DNS-resolve to — private/loopback/link-local/reserved/metadata addresses."""
     try:
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in url) or "\\" in url:
+            return False, "invalid_char"
         p = urlsplit(url)
     except Exception as e:
         return False, f"parse_error:{e}"
@@ -46,6 +60,14 @@ def classify_url(url: str, allow_private: bool = False) -> tuple[bool, str]:
     host = p.hostname
     if not host:
         return False, "no_host"
+
+    # Accessing SplitResult.port performs validation and raises for malformed
+    # or out-of-range values.  Do this even for the local-testing opt-in so an
+    # ambiguous URL is never handed to a different parser downstream.
+    try:
+        port = p.port or (443 if p.scheme == "https" else 80)
+    except ValueError as e:
+        return False, f"invalid_port:{e}"
     if allow_private:
         return True, "allow_private"
 
@@ -56,15 +78,15 @@ def classify_url(url: str, allow_private: bool = False) -> tuple[bool, str]:
     except ValueError:
         pass
 
-    # Hostname → resolve and check every A/AAAA (DNS-rebinding defense).
+    # Hostname → resolve and check every returned A/AAAA address.  This is
+    # a preflight check, not DNS pinning; see the module-level limit above.
     try:
-        port = p.port or (443 if p.scheme == "https" else 80)
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
         ips = {info[4][0] for info in infos}
-    except Exception:
-        # Don't hard-fail on resolver hiccups — the real request will error out
-        # naturally; we only need to stop redirects INTO internal space.
-        return True, "resolve_failed_allow"
+    except (socket.gaierror, OSError, UnicodeError, ValueError) as e:
+        return False, f"resolve_failed:{type(e).__name__}"
+    if not ips:
+        return False, "resolve_failed:no_addresses"
     for ip in ips:
         if _ip_blocked(str(ip)):
             return False, f"resolves_internal:{host}->{ip}"

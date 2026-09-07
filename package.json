@@ -14,10 +14,13 @@
     "setup/setup.sh",
     ".claude-plugin/",
     "LICENSE",
+    "NOTICE",
+    "assets/",
     "README.md"
   ],
   "scripts": {
-    "test": "node --check bin/lazyclaude.js && bash -n setup/setup.sh && echo 'syntax OK'"
+    "test": "node --test",
+    "test:python": "cd skills/insane-search && python -m engine.tests.run_offline"
   },
   "keywords": [
     "claude-code",

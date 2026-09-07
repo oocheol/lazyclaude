@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * lazyclaude installer CLI
- * Usage: npx lazyclaude <install|update|uninstall|doctor>
+ * Usage: npx lazyclaude <install|update|uninstall|doctor|run>
  *
  * Security: every external process is spawned with shell:false and an explicit
  * argv array, so no path or env value is ever interpreted by a shell. This
@@ -11,21 +11,17 @@
 "use strict";
 
 const { spawnSync } = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const REPO = "https://github.com/oocheol/lazyclaude.git";
-const BUNDLED_REPOS = [
-  {
-    name: "insane-search",
-    repo: "https://github.com/fivetaku/insane-search.git",
-    sparsePath: "skills/insane-search",
-    destSubdir: "skills/insane-search",
-  },
-];
+// The override is intentionally undocumented; it makes the installer testable
+// against a local repository without contacting or mutating a real account.
+const REPO = process.env.LAZYCLAUDE_REPO || "https://github.com/oocheol/lazyclaude.git";
 const PLUGIN_NAME = "lazyclaude";
 const PKG_VERSION = require("../package.json").version;
+const STATE_VERSION = 1;
 
 function claudeConfigDir() {
   return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
@@ -37,6 +33,39 @@ function pluginsRoot() {
 
 function pluginDir() {
   return path.join(pluginsRoot(), PLUGIN_NAME);
+}
+
+function installerStatePath() {
+  return path.join(claudeConfigDir(), ".lazyclaude-installer.json");
+}
+
+function pluginManifest(pluginDest) {
+  const manifestPath = path.join(pluginDest, ".claude-plugin", "plugin.json");
+  try {
+    const stat = fs.lstatSync(manifestPath);
+    if (!stat.isFile()) {
+      return { ok: false, error: `${manifestPath} is not a regular file` };
+    }
+    const value = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { ok: false, error: `${manifestPath} must contain a JSON object` };
+    }
+    if (value.name !== PLUGIN_NAME) {
+      return { ok: false, error: `${manifestPath} must declare name \"${PLUGIN_NAME}\"` };
+    }
+    if (value.version !== undefined && typeof value.version !== "string") {
+      return { ok: false, error: `${manifestPath} has a non-string version` };
+    }
+    return { ok: true, value, path: manifestPath };
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return { ok: false, error: `${manifestPath} is missing` };
+    }
+    if (error instanceof SyntaxError) {
+      return { ok: false, error: `${manifestPath} is not valid JSON: ${error.message}` };
+    }
+    return { ok: false, error: `Could not read ${manifestPath}: ${error.message}` };
+  }
 }
 
 /**
@@ -56,7 +85,13 @@ function hasGit() {
 function install() {
   const dest = pluginDir();
 
-  if (fs.existsSync(dest)) {
+  if (pathExists(dest)) {
+    const manifest = pluginManifest(dest);
+    if (!manifest.ok) {
+      console.error(`Cannot install over an existing invalid path at ${dest}: ${manifest.error}`);
+      console.error("Move or remove that path explicitly, then retry.");
+      process.exit(1);
+    }
     console.log(`lazyclaude already installed at ${dest}`);
     console.log("Run 'npx lazyclaude update' to update.");
     return;
@@ -70,31 +105,47 @@ function install() {
   console.log("Installing lazyclaude...");
   fs.mkdirSync(pluginsRoot(), { recursive: true });
 
-  const result = run("git", ["clone", "--depth=1", REPO, dest]);
+  // Clone out of sight and publish with a single rename. In particular, never
+  // delete `dest` after a failed clone: another installer may have won the race.
+  const staging = fs.mkdtempSync(path.join(pluginsRoot(), `.${PLUGIN_NAME}-install-`));
+  const result = run("git", ["clone", "--depth=1", REPO, staging]);
   if (result.error || result.status !== 0) {
-    fs.rmSync(dest, { recursive: true, force: true });
+    fs.rmSync(staging, { recursive: true, force: true });
     console.error("Clone failed. Check your internet connection and that git is installed.");
     process.exit(1);
   }
 
-  // Run first-run setup, if present. Skip silently when bash is unavailable
-  // (e.g. a Windows host without Git Bash) — setup is non-essential.
-  const setupScript = path.join(dest, "setup", "setup.sh");
-  if (fs.existsSync(setupScript)) {
-    const setup = run("bash", [setupScript]);
-    if (setup.error) {
-      console.warn("Note: skipped setup.sh (bash not available). Plugin still works.");
+  const manifest = pluginManifest(staging);
+  if (!manifest.ok) {
+    fs.rmSync(staging, { recursive: true, force: true });
+    console.error(`Clone did not contain a valid lazyclaude plugin: ${manifest.error}`);
+    process.exit(1);
+  }
+  try {
+    fs.renameSync(staging, dest);
+  } catch (error) {
+    fs.rmSync(staging, { recursive: true, force: true });
+    if (pathExists(dest)) {
+      console.error(`Install stopped because another installation appeared at ${dest}.`);
+    } else {
+      console.error(`Could not publish the installation: ${error.message}`);
     }
+    process.exit(1);
   }
 
   linkCommands(dest);
 
   console.log("\n✓ lazyclaude installed.");
-  console.log("Restart Claude Code to activate. Commands available:");
+  console.log("Plugin files and command aliases are ready. Launch Claude Code with:");
+  console.log("  lazyclaude run -- [claude arguments]");
+  console.log("This explicitly loads the installed plugin. Commands included:");
   console.log("  /ulw-loop   — verified completion loop");
   console.log("  /ulw-plan   — write a plan before coding");
   console.log("  /start-work — execute a plan");
   console.log("  /init-deep  — generate project memory");
+  if (process.platform === "win32") {
+    console.log(`If Claude is installed only as claude.cmd, run it directly with --plugin-dir "${path.resolve(dest)}".`);
+  }
 }
 
 function claudeCommandsDir() {
@@ -106,70 +157,185 @@ function isSafeFilename(name) {
   return name === path.basename(name) && !name.includes("..") && name.length > 0;
 }
 
-function linkCommands(pluginDest) {
-  const srcDir = path.join(pluginDest, "commands");
-  if (!fs.existsSync(srcDir)) return;
-  const cmdDir = claudeCommandsDir();
-  fs.mkdirSync(cmdDir, { recursive: true });
-  for (const file of fs.readdirSync(srcDir)) {
-    if (!file.endsWith(".md") || !isSafeFilename(file)) continue;
-    const dest = path.join(cmdDir, file);
-    if (fs.existsSync(dest)) continue;
-    fs.copyFileSync(path.join(srcDir, file), dest);
+function withInstallerLock(action) {
+  fs.mkdirSync(claudeConfigDir(), { recursive: true });
+  const lockPath = path.join(claudeConfigDir(), ".lazyclaude-installer.lock");
+  let descriptor;
+  try {
+    descriptor = fs.openSync(lockPath, "wx", 0o600);
+    fs.writeFileSync(descriptor, `${process.pid}\n`);
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try { fs.closeSync(descriptor); } catch {}
+      try { fs.rmSync(lockPath); } catch {}
+    }
+    if (error.code === "EEXIST") {
+      console.error(`Another lazyclaude install, update, or uninstall is already running (${lockPath}).`);
+      console.error("If no installer is running, remove this stale lock file and retry.");
+      return false;
+    }
+    throw error;
+  }
+
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    try { fs.closeSync(descriptor); } catch {}
+    try { fs.rmSync(lockPath); } catch {}
+  };
+  process.once("exit", release);
+  try {
+    action();
+    return true;
+  } finally {
+    release();
+    process.removeListener("exit", release);
   }
 }
 
-function unlinkCommands(pluginDest) {
+function pathExists(file) {
+  try {
+    fs.lstatSync(file);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
+    throw error;
+  }
+}
+
+function regularFileHash(file) {
+  try {
+    if (!fs.lstatSync(file).isFile()) return null;
+    return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
+    throw error;
+  }
+}
+
+function loadInstallerState() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(installerStatePath(), "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+        parsed.version !== STATE_VERSION || !parsed.commands ||
+        typeof parsed.commands !== "object" || Array.isArray(parsed.commands)) {
+      return { version: STATE_VERSION, commands: {} };
+    }
+    const commands = {};
+    for (const [name, hash] of Object.entries(parsed.commands)) {
+      if (isSafeFilename(name) && name.endsWith(".md") && /^[a-f0-9]{64}$/.test(hash)) {
+        commands[name] = hash;
+      }
+    }
+    return { version: STATE_VERSION, commands };
+  } catch (error) {
+    if (error.code === "ENOENT" || error instanceof SyntaxError) {
+      return { version: STATE_VERSION, commands: {} };
+    }
+    throw error;
+  }
+}
+
+function saveInstallerState(state) {
+  const statePath = installerStatePath();
+  const names = Object.keys(state.commands);
+  if (names.length === 0) {
+    fs.rmSync(statePath, { force: true });
+    return;
+  }
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  const tmp = `${statePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
+    fs.renameSync(tmp, statePath);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+}
+
+function commandFiles(pluginDest) {
   const srcDir = path.join(pluginDest, "commands");
-  if (!fs.existsSync(srcDir)) return;
+  if (!pathExists(srcDir)) return [];
+  if (!fs.lstatSync(srcDir).isDirectory()) return [];
+  return fs.readdirSync(srcDir).filter(file =>
+    file.endsWith(".md") && isSafeFilename(file) && regularFileHash(path.join(srcDir, file))
+  );
+}
+
+function linkCommands(pluginDest) {
   const cmdDir = claudeCommandsDir();
-  for (const file of fs.readdirSync(srcDir)) {
-    if (!isSafeFilename(file)) continue;
+  fs.mkdirSync(cmdDir, { recursive: true });
+  const state = loadInstallerState();
+  for (const file of commandFiles(pluginDest)) {
+    const src = path.join(pluginDest, "commands", file);
+    const dest = path.join(cmdDir, file);
+    if (pathExists(dest)) continue;
+    fs.copyFileSync(src, dest, fs.constants.COPYFILE_EXCL);
+    state.commands[file] = regularFileHash(src);
+  }
+  saveInstallerState(state);
+}
+
+function syncCommands(pluginDest) {
+  const cmdDir = claudeCommandsDir();
+  fs.mkdirSync(cmdDir, { recursive: true });
+  const state = loadInstallerState();
+  const sources = new Set(commandFiles(pluginDest));
+
+  for (const [file, installedHash] of Object.entries(state.commands)) {
     const target = path.join(cmdDir, file);
-    if (path.resolve(target).startsWith(path.resolve(cmdDir) + path.sep) && fs.existsSync(target)) {
+    const targetExists = pathExists(target);
+    const targetHash = regularFileHash(target);
+    if (targetExists && targetHash !== installedHash) {
+      // The user edited/replaced it, or made it a symlink/directory. Preserve
+      // it and relinquish ownership; copying to a symlink would alter its target.
+      delete state.commands[file];
+      continue;
+    }
+    if (!sources.has(file)) {
+      if (targetHash === installedHash) fs.rmSync(target);
+      delete state.commands[file];
+      continue;
+    }
+    const src = path.join(pluginDest, "commands", file);
+    fs.copyFileSync(src, target);
+    state.commands[file] = regularFileHash(src);
+    sources.delete(file);
+  }
+
+  // Newly introduced commands are installed only where no user file exists.
+  for (const file of sources) {
+    const target = path.join(cmdDir, file);
+    if (pathExists(target)) continue;
+    const src = path.join(pluginDest, "commands", file);
+    fs.copyFileSync(src, target, fs.constants.COPYFILE_EXCL);
+    state.commands[file] = regularFileHash(src);
+  }
+  saveInstallerState(state);
+}
+
+function unlinkCommands() {
+  const cmdDir = claudeCommandsDir();
+  const state = loadInstallerState();
+  for (const [file, installedHash] of Object.entries(state.commands)) {
+    const target = path.join(cmdDir, file);
+    if (regularFileHash(target) === installedHash) {
       fs.rmSync(target);
     }
   }
-}
-
-function updateBundled(pluginDest) {
-  for (const bundle of BUNDLED_REPOS) {
-    console.log(`Updating bundled: ${bundle.name}...`);
-    const tmpDir = path.join(os.tmpdir(), `lazyclaude-${bundle.name}-${Date.now()}`);
-    try {
-      const clone = run("git", ["clone", "--depth=1", "--filter=blob:none", "--sparse", bundle.repo, tmpDir]);
-      if (clone.error || clone.status !== 0) {
-        console.warn(`  Warning: could not update ${bundle.name} (clone failed). Skipping.`);
-        continue;
-      }
-      const checkout = run("git", ["-C", tmpDir, "sparse-checkout", "set", bundle.sparsePath]);
-      if (checkout.error || checkout.status !== 0) {
-        console.warn(`  Warning: could not update ${bundle.name} (sparse-checkout failed). Skipping.`);
-        continue;
-      }
-      const srcPath = path.join(tmpDir, bundle.sparsePath);
-      const destPath = path.resolve(pluginDest, bundle.destSubdir);
-      if (!destPath.startsWith(path.resolve(pluginDest) + path.sep)) {
-        console.warn(`  Warning: refusing unsafe destSubdir for ${bundle.name}. Skipping.`);
-        continue;
-      }
-      if (!fs.existsSync(srcPath)) {
-        console.warn(`  Warning: ${bundle.sparsePath} not found in ${bundle.name}. Skipping.`);
-        continue;
-      }
-      fs.rmSync(destPath, { recursive: true, force: true });
-      fs.cpSync(srcPath, destPath, { recursive: true });
-      console.log(`  ✓ ${bundle.name} updated.`);
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-  }
+  saveInstallerState({ version: STATE_VERSION, commands: {} });
 }
 
 function update() {
   const dest = pluginDir();
-  if (!fs.existsSync(dest)) {
+  if (!pathExists(dest)) {
     console.log("lazyclaude not installed. Run: npx lazyclaude install");
+    process.exit(1);
+  }
+  const destStat = fs.lstatSync(dest);
+  if (!destStat.isDirectory() || destStat.isSymbolicLink()) {
+    console.error(`Refusing to update a non-directory or symlinked installation: ${dest}`);
     process.exit(1);
   }
   if (!hasGit()) {
@@ -186,26 +352,32 @@ function update() {
     process.exit(1);
   }
 
+  const manifest = pluginManifest(dest);
+  if (!manifest.ok) {
+    console.error(`Update produced an invalid plugin: ${manifest.error}`);
+    console.error("Command aliases were left unchanged.");
+    process.exit(1);
+  }
+
   const after = run("git", ["-C", dest, "rev-parse", "HEAD"], { stdio: "pipe" });
   const afterHash = after.stdout ? after.stdout.toString().trim() : "";
 
   if (beforeHash && afterHash && beforeHash === afterHash) {
     console.log("✓ Already up to date.");
   } else {
-    console.log("✓ Updated. Restart Claude Code to apply.");
+    console.log("✓ Updated. New sessions started with 'lazyclaude run --' will use it.");
     if (beforeHash && afterHash) {
       run("git", ["-C", dest, "log", "--oneline", `${beforeHash}..${afterHash}`]);
     }
   }
 
-  unlinkCommands(dest);
-  linkCommands(dest);
-  updateBundled(dest);
+  syncCommands(dest);
 }
 
 function uninstall() {
   const dest = pluginDir();
-  if (!fs.existsSync(dest)) {
+  if (!pathExists(dest)) {
+    unlinkCommands();
     console.log("lazyclaude not installed.");
     return;
   }
@@ -216,7 +388,12 @@ function uninstall() {
     console.error(`Refusing to remove unexpected path: ${dest}`);
     process.exit(1);
   }
-  unlinkCommands(dest);
+  const destStat = fs.lstatSync(dest);
+  if (!destStat.isDirectory() || destStat.isSymbolicLink()) {
+    console.error(`Refusing to remove a non-directory or symlinked installation: ${dest}`);
+    process.exit(1);
+  }
+  unlinkCommands();
   fs.rmSync(dest, { recursive: true, force: true });
   console.log("✓ lazyclaude uninstalled.");
 }
@@ -228,23 +405,39 @@ function stripMd(name) {
 function doctor() {
   const dest = pluginDir();
   console.log(`lazyclaude v${PKG_VERSION} — doctor\n`);
-  console.log(`Plugin dir: ${dest} — ${fs.existsSync(dest) ? "✓ exists" : "✗ missing"}`);
+  const destExists = pathExists(dest);
+  console.log(`Plugin dir: ${dest} — ${destExists ? "✓ exists" : "✗ missing"}`);
+
+  const manifest = pluginManifest(dest);
+  if (manifest.ok) {
+    const version = manifest.value.version ? ` (version ${manifest.value.version})` : "";
+    console.log(`Manifest: ✓ valid${version}`);
+  } else {
+    console.log(`Manifest: ✗ invalid — ${manifest.error}`);
+  }
 
   const commandsDir = path.join(dest, "commands");
-  const commands = fs.existsSync(commandsDir)
-    ? fs.readdirSync(commandsDir).filter(f => f.endsWith(".md")).map(stripMd)
-    : [];
+  const commands = pathExists(commandsDir) ? commandFiles(dest).map(stripMd) : [];
   console.log(`Commands (plugin): ${commands.length ? commands.map(c => "/" + c).join(", ") : "none"}`);
 
   const installedCmdDir = claudeCommandsDir();
-  const installedCmds = commands.filter(c =>
-    fs.existsSync(path.join(installedCmdDir, c + ".md"))
-  );
-  const missingCmds = commands.filter(c => !installedCmds.includes(c));
-  console.log(`Commands (active): ${installedCmds.length ? installedCmds.map(c => "/" + c).join(", ") : "none"}`);
+  const state = loadInstallerState();
+  const managedCmds = commands.filter(c => {
+    const file = c + ".md";
+    return state.commands[file] && regularFileHash(path.join(installedCmdDir, file)) === state.commands[file];
+  });
+  const preservedCmds = commands.filter(c => {
+    const file = c + ".md";
+    return !managedCmds.includes(c) && pathExists(path.join(installedCmdDir, file));
+  });
+  const missingCmds = commands.filter(c => !managedCmds.includes(c) && !preservedCmds.includes(c));
+  console.log(`Command aliases (managed): ${managedCmds.length ? managedCmds.map(c => "/" + c).join(", ") : "none"}`);
+  if (preservedCmds.length) {
+    console.log(`Command aliases (user-owned or modified, preserved): ${preservedCmds.map(c => "/" + c).join(", ")}`);
+  }
   if (missingCmds.length) {
-    console.log(`  ✗ Not installed in ${installedCmdDir}: ${missingCmds.map(c => "/" + c).join(", ")}`);
-    console.log(`  Run 'npx lazyclaude update' to fix.`);
+    console.log(`Command aliases (missing): ${missingCmds.map(c => "/" + c).join(", ")}`);
+    console.log(`  Run 'npx lazyclaude update' to add only aliases whose paths remain unused.`);
   }
 
   const skillsDir = path.join(dest, "skills");
@@ -257,42 +450,135 @@ function doctor() {
     : [];
   console.log(`Agents: ${agents.length ? agents.join(", ") : "none"}`);
 
-  console.log(`git: ${hasGit() ? "✓ available" : "✗ not found"}`);
+  const gitAvailable = hasGit();
+  console.log(`git: ${gitAvailable ? "✓ available" : "✗ not found"}`);
 
-  // Show installed plugin version if available
-  const manifest = path.join(dest, ".claude-plugin", "plugin.json");
-  if (fs.existsSync(manifest)) {
-    try {
-      const v = JSON.parse(fs.readFileSync(manifest, "utf8")).version;
-      if (v) console.log(`Plugin version: ${v}`);
-    } catch {}
+  console.log("Activation: use 'lazyclaude run -- [claude arguments]' to load this plugin explicitly.");
+
+  if (!destExists || !manifest.ok || commands.length === 0 || missingCmds.length || !gitAvailable) {
+    process.exitCode = 1;
   }
+}
+
+function windowsPathEntries(env) {
+  const pathValue = env.Path || env.PATH || "";
+  return pathValue.split(";").filter(Boolean);
+}
+
+function resolveClaudeExecutable({ env = process.env, platform = process.platform } = {}) {
+  const configured = env.LAZYCLAUDE_CLAUDE_BIN;
+  if (configured) {
+    if (platform === "win32" && /\.(?:cmd|bat)$/i.test(configured)) {
+      return {
+        error: `LAZYCLAUDE_CLAUDE_BIN points to ${configured}. Windows .cmd/.bat shims require a shell, so lazyclaude will not pass arbitrary arguments to one. Configure LAZYCLAUDE_CLAUDE_BIN to a native claude.exe instead.`,
+      };
+    }
+    return { file: configured };
+  }
+
+  if (platform !== "win32") return { file: "claude" };
+
+  let shim = null;
+  for (const dir of windowsPathEntries(env)) {
+    for (const extension of [".exe", ".com", ".cmd", ".bat"]) {
+      const candidate = path.join(dir, `claude${extension}`);
+      if (!pathExists(candidate)) continue;
+      if (extension === ".exe" || extension === ".com") return { file: candidate };
+      shim = shim || candidate;
+    }
+  }
+  if (shim) {
+    return {
+      error: `Found Claude Code only as the Windows shim ${shim}. This launcher does not use a command shell for arbitrary arguments. Set LAZYCLAUDE_CLAUDE_BIN to a native claude.exe, or invoke Claude directly with --plugin-dir \"${path.resolve(pluginDir())}\".`,
+    };
+  }
+  return { file: "claude" };
+}
+
+function launchClaude(claudeArgs, options = {}) {
+  const pluginDest = path.resolve(options.pluginDest || pluginDir());
+  const manifest = pluginManifest(pluginDest);
+  if (!manifest.ok) {
+    console.error(`Cannot launch Claude Code: invalid lazyclaude plugin: ${manifest.error}`);
+    console.error("Run 'lazyclaude doctor' for details, then reinstall or repair the plugin.");
+    return 1;
+  }
+
+  const executable = resolveClaudeExecutable({
+    env: options.env || process.env,
+    platform: options.platform || process.platform,
+  });
+  if (executable.error) {
+    console.error(executable.error);
+    return 1;
+  }
+
+  const spawn = options.spawnSync || spawnSync;
+  const result = spawn(executable.file, ["--plugin-dir", pluginDest, ...claudeArgs], {
+    stdio: "inherit",
+    shell: false,
+    cwd: options.cwd || process.cwd(),
+    env: options.env || process.env,
+  });
+  if (result.error) {
+    console.error(`Could not start Claude Code (${executable.file}): ${result.error.message}`);
+    if (process.platform === "win32") {
+      console.error("If Claude is installed as claude.cmd, configure LAZYCLAUDE_CLAUDE_BIN to a native claude.exe.");
+    }
+    return 1;
+  }
+  if (typeof result.status === "number") return result.status;
+  console.error(`Claude Code exited without a status${result.signal ? ` (signal ${result.signal})` : ""}.`);
+  return 1;
 }
 
 function help() {
   console.log(`lazyclaude v${PKG_VERSION}`);
-  console.log("Usage: npx lazyclaude <install|update|uninstall|doctor>");
+  console.log("Usage: npx lazyclaude <install|update|uninstall|doctor|run>");
   console.log("");
   console.log("Commands:");
   console.log("  install    Clone plugin into ~/.claude/plugins/lazyclaude");
   console.log("  update     Pull latest changes (shows changelog)");
   console.log("  uninstall  Remove the plugin");
   console.log("  doctor     Health check — plugin, commands, agents, git");
+  console.log("  run -- ... Launch Claude Code with this plugin explicitly loaded");
 }
 
-const cmd = process.argv[2] || "help";
-switch (cmd) {
-  case "install":   install();   break;
-  case "update":    update();    break;
-  case "uninstall": uninstall(); break;
-  case "doctor":    doctor();    break;
-  case "help":
-  case "--help":
-  case "-h":        help();      break;
-  case "--version":
-  case "-v":        console.log(`lazyclaude v${PKG_VERSION}`); break;
-  default:
-    console.error(`Unknown command: ${cmd}`);
-    help();
-    process.exit(1);
+if (require.main === module) {
+  const cmd = process.argv[2] || "help";
+  switch (cmd) {
+    case "install":
+      if (!withInstallerLock(install)) process.exitCode = 1;
+      break;
+    case "update":
+      if (!withInstallerLock(update)) process.exitCode = 1;
+      break;
+    case "uninstall":
+      if (!withInstallerLock(uninstall)) process.exitCode = 1;
+      break;
+    case "doctor":    doctor();    break;
+    case "run":
+      if (process.argv[3] !== "--") {
+        console.error("Usage: lazyclaude run -- <claude arguments>");
+        process.exitCode = 1;
+      } else {
+        process.exitCode = launchClaude(process.argv.slice(4));
+      }
+      break;
+    case "help":
+    case "--help":
+    case "-h":        help();      break;
+    case "--version":
+    case "-v":        console.log(`lazyclaude v${PKG_VERSION}`); break;
+    default:
+      console.error(`Unknown command: ${cmd}`);
+      help();
+      process.exit(1);
+  }
 }
+
+module.exports = {
+  launchClaude,
+  pluginManifest,
+  resolveClaudeExecutable,
+};

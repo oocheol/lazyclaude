@@ -26,7 +26,10 @@ score = file_count × (1 + avg_nesting_depth) × language_diversity_factor
 Pick the **top 8 by score** (minimum 3 source files to qualify). If fewer than 3 directories qualify, only write root CLAUDE.md.
 
 ## Step 2 — Write local CLAUDE.md files
-For each scored directory, read 3–5 representative files, then write a `CLAUDE.md`:
+For each scored directory, read 3–5 representative files. If `CLAUDE.md` already
+exists, read it before acting: preserve authored instructions and only make a minimal,
+evidence-based update for stale or missing factual context. Do not replace it wholesale.
+If it does not exist, write a `CLAUDE.md`:
 
 ```markdown
 # <Directory Name>
@@ -47,7 +50,8 @@ For each scored directory, read 3–5 representative files, then write a `CLAUDE
 ```
 
 ## Step 3 — Write root CLAUDE.md
-Synthesize findings into a root `CLAUDE.md`:
+If the root `CLAUDE.md` exists, follow the same read-first preservation rule. Otherwise,
+synthesize findings into a root `CLAUDE.md`:
 
 ```markdown
 # Project: <name>
@@ -69,4 +73,4 @@ Synthesize findings into a root `CLAUDE.md`:
 ```
 
 ## Step 4 — Report
-List every `CLAUDE.md` written. Note any directories skipped and why.
+List every `CLAUDE.md` written, minimally updated, and preserved unchanged. Note any directories skipped and why.
