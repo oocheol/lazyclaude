@@ -200,8 +200,10 @@ typically uses `~/.claude/plugins/lazyclaude/skills/insane-search`).
 
 - **공개 콘텐츠만** — 로그인 월, 페이월은 시도하지 않음
 - **의존성** — optional transports such as `curl_cffi` and `yt-dlp` may need
-  to be installed separately; offline checks use only the Python standard
-  library.
+  to be installed separately. Production preserves fallbacks when `PyYAML` or
+  Beautiful Soup are absent, but the deterministic regression suite requires
+  their pinned test dependencies to exercise the full profile and selector
+  behavior.
 - **API 키 불필요** — 외부 설정 없이 동작
 
 ---
@@ -232,14 +234,17 @@ MIT
 
 ## Tests
 
-Offline checks require only Node.js 18+ and Python 3.10+:
+The test setup needs Node.js 18+, Python 3.10+, and a one-time dependency
+install that requires network access once:
 
 ```bash
+python -m pip install -r requirements-test.txt
 npm test
 npm run test:python
 ```
 
 The Python command runs deterministic engine checks from
 `skills/insane-search`; tests that contact live sites are separate and are not
-part of the offline CI gate. No API keys or real Claude/API workflow calls are
-used by these checks.
+part of the offline CI gate. After setup, the offline suite itself does not
+make network requests: its child processes block DNS and socket connections.
+No API keys or real Claude/API workflow calls are used by these checks.

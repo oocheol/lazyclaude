@@ -52,3 +52,27 @@ test("README documents explicit plugin loading and portable engine launch", () =
   assert.match(readme, /bare clone[\s\S]*not automatically loaded/i);
   assert.match(readme, /\/lazyclaude:ulw-loop/);
 });
+
+test("Python CI installs the locked offline-test dependencies before running them", () => {
+  const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
+  const requirements = fs.readFileSync(path.join(root, "requirements-test.txt"), "utf8");
+  for (const dependency of [
+    "PyYAML==6.0.3",
+    "beautifulsoup4==4.15.0",
+    "soupsieve==2.8.4",
+    "typing_extensions==4.15.0",
+  ]) {
+    assert.match(requirements, new RegExp(`^${dependency}$`, "m"));
+  }
+  const install = "python -m pip install --disable-pip-version-check -r requirements-test.txt";
+  assert.ok(workflow.includes(install), "Python CI must install requirements-test.txt");
+  assert.ok(workflow.indexOf(install) < workflow.indexOf("npm run test:python"),
+    "Python CI must install test requirements before running the offline suite");
+});
+
+test("README distinguishes networked test setup from offline test execution", () => {
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+  assert.match(readme, /python -m pip install -r requirements-test\.txt/);
+  assert.match(readme, /requires network access once/i);
+  assert.match(readme, /offline suite itself does not\s+make network requests/i);
+});

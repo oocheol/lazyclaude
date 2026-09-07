@@ -65,7 +65,13 @@ Root rerun results on Windows (Node.js 24.15.0, Python 3.12.14):
   install/update/uninstall integration, launcher argument forwarding, workflow
   content contracts, and real npm package-file inspection.
 - Python: 45 behavioral checks passed (U1: 12, U5: 17, U7: 16), plus a clean
-  site-specific-logic check. Four scripts run with DNS/socket access disabled.
+  site-specific-logic check, in a pre-provisioned environment. That historical
+  result did not prove a bare Python installation could run the suite: its
+  required test packages were already installed. CI now installs the pinned
+  `requirements-test.txt` set before the offline runner performs its explicit
+  dependency preflight. The engine's production fallbacks remain available;
+  they are not accepted as regression-test substitutes. Four original scripts
+  run with DNS/socket access disabled.
 - Claude Code 2.1.217: `claude plugin validate .` passed.
 - Installer JavaScript syntax, Git Bash setup syntax, and `git diff --check`
   passed. The npm dry-run includes NOTICE and artwork without Python caches.

@@ -1,0 +1,6 @@
+# Deterministic dependencies required by the offline engine regression suite.
+# Production keeps graceful fallbacks when these optional packages are absent.
+PyYAML==6.0.3
+beautifulsoup4==4.15.0
+soupsieve==2.8.4
+typing_extensions==4.15.0
