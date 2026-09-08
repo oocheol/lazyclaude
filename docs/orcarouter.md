@@ -11,7 +11,7 @@ lazyclaude run -- [Claude args]
 To opt into OrcaRouter for one child process, use:
 
 ```bash
-node bin/lazyclaude.js run --provider orcarouter -- [Claude args]
+npx lazyclaude@latest run --provider orcarouter -- [Claude args]
 ```
 
 The provider requires all four environment variables:
@@ -81,7 +81,7 @@ export ORCAROUTER_API_KEY
 export ORCAROUTER_OPUS_MODEL='<current-opus-model-id>'
 export ORCAROUTER_SONNET_MODEL='<current-sonnet-model-id>'
 export ORCAROUTER_HAIKU_MODEL='<current-haiku-model-id>'
-node bin/lazyclaude.js run --provider orcarouter -- --help
+npx lazyclaude@latest run --provider orcarouter -- --help
 unset ORCAROUTER_API_KEY ORCAROUTER_OPUS_MODEL ORCAROUTER_SONNET_MODEL ORCAROUTER_HAIKU_MODEL
 ```
 
@@ -95,7 +95,7 @@ $env:ORCAROUTER_API_KEY = $orcaCredential.GetNetworkCredential().Password
 $env:ORCAROUTER_OPUS_MODEL = '<current-opus-model-id>'
 $env:ORCAROUTER_SONNET_MODEL = '<current-sonnet-model-id>'
 $env:ORCAROUTER_HAIKU_MODEL = '<current-haiku-model-id>'
-node bin/lazyclaude.js run --provider orcarouter -- --help
+npx lazyclaude@latest run --provider orcarouter -- --help
 Remove-Item Env:ORCAROUTER_API_KEY, Env:ORCAROUTER_OPUS_MODEL, Env:ORCAROUTER_SONNET_MODEL, Env:ORCAROUTER_HAIKU_MODEL -ErrorAction SilentlyContinue
 Remove-Variable orcaSecret, orcaCredential -ErrorAction SilentlyContinue
 ```
@@ -104,10 +104,24 @@ The key necessarily exists in the launched process environment while Claude
 Code runs. Avoid shell history, committed `.env` files, logs, screenshots, and
 copying the value into prompts.
 
-## Source-checkout setup and Windows
+## Installation, updates, and Windows
 
-This provider documentation describes the source checkout launcher. Clone
-the repository, install the plugin, then configure the variables above:
+The provider flag requires CLI v0.1.3 or later:
+
+```bash
+npx lazyclaude@latest install
+# If the plugin is already installed:
+npx lazyclaude@latest update
+```
+
+The npm package supplies the CLI. `install` clones the current Git upstream
+only when the plugin is absent; it does not update an existing installation.
+`update` pulls the installed plugin's Git checkout, not the npm CLI itself.
+Use `@latest` for the current npm CLI, or update a global installation with
+`npm install -g lazyclaude@latest`.
+
+Alternatively, clone the repository, install the plugin, then configure the
+variables above and use `node bin/lazyclaude.js run --provider orcarouter -- ...`:
 
 ```bash
 git clone https://github.com/oocheol/lazyclaude.git
@@ -115,8 +129,7 @@ cd lazyclaude
 node bin/lazyclaude.js install
 ```
 
-Use this source launcher for the new provider flags; availability in the
-published npm `v0.1.2` package has not been verified. On Windows, `run`
+On Windows, `run`
 requires a native `claude.exe`; it rejects `.cmd`/`.bat` shims because the
 launcher does not pass arbitrary arguments through a shell. Set
 `LAZYCLAUDE_CLAUDE_BIN` to a native executable when needed, or invoke

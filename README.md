@@ -70,10 +70,10 @@ as `claude.cmd`, invoke it directly with the `--plugin-dir` flag or configure
 LazyClaude can launch Claude Code through OrcaRouter's Anthropic-compatible endpoint:
 
 ```bash
-node bin/lazyclaude.js run --provider orcarouter -- [Claude args]
+npx lazyclaude@latest run --provider orcarouter -- [Claude args]
 ```
 
-This source-checkout launcher requires `ORCAROUTER_API_KEY`,
+Available in CLI v0.1.3 and later. This launcher requires `ORCAROUTER_API_KEY`,
 `ORCAROUTER_OPUS_MODEL`, `ORCAROUTER_SONNET_MODEL`, and
 `ORCAROUTER_HAIKU_MODEL`. It is opt-in: existing `run --` behavior, defaults,
 and persisted settings are unchanged. See [the OrcaRouter guide](docs/orcarouter.md)
