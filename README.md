@@ -65,6 +65,27 @@ On Windows, `run` requires a native `claude.exe`; if Claude is available only
 as `claude.cmd`, invoke it directly with the `--plugin-dir` flag or configure
 `LAZYCLAUDE_CLAUDE_BIN` to a native executable.
 
+## Optional: OrcaRouter provider
+
+LazyClaude can launch Claude Code through OrcaRouter's Anthropic-compatible endpoint:
+
+```bash
+node bin/lazyclaude.js run --provider orcarouter -- [Claude args]
+```
+
+This source-checkout launcher requires `ORCAROUTER_API_KEY`,
+`ORCAROUTER_OPUS_MODEL`, `ORCAROUTER_SONNET_MODEL`, and
+`ORCAROUTER_HAIKU_MODEL`. It is opt-in: existing `run --` behavior, defaults,
+and persisted settings are unchanged. See [the OrcaRouter guide](docs/orcarouter.md)
+for setup, security, Windows requirements, and current verification status.
+
+Referral disclosure: if you choose to use [this public OrcaRouter referral
+link](https://www.orcarouter.ai/ref/ref_d7de05b7c0ee9440f978), the project may
+earn 5% of eligible paid inference spend under the program terms. BYOK usage is
+excluded per the vendor's email. Gateway usage is billed separately from a
+Claude subscription. Referral signup is optional. See OrcaRouter's
+[Built with page](https://www.orcarouter.ai/built-with).
+
 ## Commands
 
 Invoke with `/command-name` in Claude Code.

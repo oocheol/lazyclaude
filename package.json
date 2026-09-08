@@ -16,6 +16,7 @@
     "LICENSE",
     "NOTICE",
     "assets/",
+    "docs/orcarouter.md",
     "README.md"
   ],
   "scripts": {

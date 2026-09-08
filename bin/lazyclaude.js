@@ -495,6 +495,102 @@ function resolveClaudeExecutable({ env = process.env, platform = process.platfor
   return { file: "claude" };
 }
 
+const ORCAROUTER_BASE_URL = "https://api.orcarouter.ai";
+const ORCAROUTER_CONFIG = [
+  ["ORCAROUTER_API_KEY", "key"],
+  ["ORCAROUTER_OPUS_MODEL", "model"],
+  ["ORCAROUTER_SONNET_MODEL", "model"],
+  ["ORCAROUTER_HAIKU_MODEL", "model"],
+];
+
+function envValue(env, name, platform) {
+  if (platform !== "win32") return env[name];
+  const key = Object.keys(env).find(candidate => candidate.toUpperCase() === name);
+  return key === undefined ? undefined : env[key];
+}
+
+function invalidOrcaRouterValue(value, kind) {
+  if (typeof value !== "string" || value.length === 0 || /[\s\x00-\x1f\x7f]/u.test(value)) {
+    return true;
+  }
+  if (kind === "model" && !/^[^/]+\/[^/]+$/u.test(value)) return true;
+  return false;
+}
+
+function isOrcaRouterConflict(name) {
+  const upper = name.toUpperCase();
+  if ([
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_OAUTH_TOKEN",
+    "ANTHROPIC_CUSTOM_HEADERS",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_SMALL_FAST_MODEL",
+    "ANTHROPIC_DEFAULT_MODEL",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+    "CLAUDE_CODE_SUBAGENT_MODEL",
+    "CLAUDE_CODE_SUBAGENT_MODEL_FORCE",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_MANTLE",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+    "CLAUDE_CODE_USE_ANTHROPIC_AWS",
+    "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+  ].includes(upper)) return true;
+  if (/^ANTHROPIC_DEFAULT_(?:FABLE|OPUS|SONNET|HAIKU)_MODEL(?:_|$)/u.test(upper)) return true;
+  if (/^ANTHROPIC_CUSTOM_MODEL_OPTION(?:_|$)/u.test(upper)) return true;
+  return ORCAROUTER_CONFIG.some(([configName]) => upper === configName);
+}
+
+/**
+ * Construct the environment for one opted-in OrcaRouter child process. The
+ * source object is never changed, and errors identify only variable names so a
+ * malformed credential cannot be copied into logs.
+ */
+function orcaRouterChildEnv(sourceEnv, platform = process.platform) {
+  const configured = {};
+  for (const [name, kind] of ORCAROUTER_CONFIG) {
+    const value = envValue(sourceEnv, name, platform);
+    if (invalidOrcaRouterValue(value, kind)) {
+      return { error: `${name} must be a nonempty ${kind === "model" ? "provider/model ID" : "value"} without whitespace or control characters.` };
+    }
+    configured[name] = value;
+  }
+
+  const childEnv = {};
+  for (const [name, value] of Object.entries(sourceEnv)) {
+    if (!isOrcaRouterConflict(name)) childEnv[name] = value;
+  }
+  childEnv.ANTHROPIC_BASE_URL = ORCAROUTER_BASE_URL;
+  childEnv.ANTHROPIC_AUTH_TOKEN = configured.ORCAROUTER_API_KEY;
+  childEnv.ANTHROPIC_DEFAULT_OPUS_MODEL = configured.ORCAROUTER_OPUS_MODEL;
+  childEnv.ANTHROPIC_DEFAULT_SONNET_MODEL = configured.ORCAROUTER_SONNET_MODEL;
+  childEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL = configured.ORCAROUTER_HAIKU_MODEL;
+  childEnv.ANTHROPIC_MODEL = configured.ORCAROUTER_SONNET_MODEL;
+  childEnv.ANTHROPIC_SMALL_FAST_MODEL = configured.ORCAROUTER_HAIKU_MODEL;
+  childEnv.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1";
+  return { env: childEnv };
+}
+
+function parseRunArguments(args) {
+  if (args[0] === "--") {
+    return { claudeArgs: args.slice(1) };
+  }
+  if (args[0] !== "--provider") {
+    return { error: "Usage: lazyclaude run [--provider orcarouter] -- <claude arguments>" };
+  }
+  if (args.length < 3 || args[2] !== "--") {
+    return { error: "Usage: lazyclaude run --provider orcarouter -- <claude arguments>" };
+  }
+  if (args[1] !== "orcarouter") {
+    return { error: `Unknown provider: ${args[1] || "(missing)"}` };
+  }
+  return { provider: "orcarouter", claudeArgs: args.slice(3) };
+}
+
 function launchClaude(claudeArgs, options = {}) {
   const pluginDest = path.resolve(options.pluginDest || pluginDir());
   const manifest = pluginManifest(pluginDest);
@@ -513,12 +609,26 @@ function launchClaude(claudeArgs, options = {}) {
     return 1;
   }
 
+  const sourceEnv = options.env || process.env;
+  let childEnv = sourceEnv;
+  if (options.provider === "orcarouter") {
+    const configured = orcaRouterChildEnv(sourceEnv, options.platform || process.platform);
+    if (configured.error) {
+      console.error(`Cannot launch OrcaRouter: ${configured.error}`);
+      return 1;
+    }
+    childEnv = configured.env;
+  } else if (options.provider !== undefined) {
+    console.error(`Cannot launch Claude Code: unknown provider ${options.provider}.`);
+    return 1;
+  }
+
   const spawn = options.spawnSync || spawnSync;
   const result = spawn(executable.file, ["--plugin-dir", pluginDest, ...claudeArgs], {
     stdio: "inherit",
     shell: false,
     cwd: options.cwd || process.cwd(),
-    env: options.env || process.env,
+    env: childEnv,
   });
   if (result.error) {
     console.error(`Could not start Claude Code (${executable.file}): ${result.error.message}`);
@@ -542,6 +652,7 @@ function help() {
   console.log("  uninstall  Remove the plugin");
   console.log("  doctor     Health check — plugin, commands, agents, git");
   console.log("  run -- ... Launch Claude Code with this plugin explicitly loaded");
+  console.log("  run --provider orcarouter -- ... Launch with child-only OrcaRouter environment overrides");
 }
 
 if (require.main === module) {
@@ -557,14 +668,16 @@ if (require.main === module) {
       if (!withInstallerLock(uninstall)) process.exitCode = 1;
       break;
     case "doctor":    doctor();    break;
-    case "run":
-      if (process.argv[3] !== "--") {
-        console.error("Usage: lazyclaude run -- <claude arguments>");
+    case "run": {
+      const parsed = parseRunArguments(process.argv.slice(3));
+      if (parsed.error) {
+        console.error(parsed.error);
         process.exitCode = 1;
       } else {
-        process.exitCode = launchClaude(process.argv.slice(4));
+        process.exitCode = launchClaude(parsed.claudeArgs, { provider: parsed.provider });
       }
       break;
+    }
     case "help":
     case "--help":
     case "-h":        help();      break;
@@ -579,6 +692,8 @@ if (require.main === module) {
 
 module.exports = {
   launchClaude,
+  orcaRouterChildEnv,
+  parseRunArguments,
   pluginManifest,
   resolveClaudeExecutable,
 };

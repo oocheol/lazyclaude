@@ -18,7 +18,7 @@ test("package metadata and plugin manifest stay in sync", () => {
 
 test("published package includes license notice and README artwork", () => {
   const pkg = readJson("package.json");
-  for (const entry of ["LICENSE", "NOTICE", "README.md", "assets/"]) {
+  for (const entry of ["LICENSE", "NOTICE", "README.md", "assets/", "docs/orcarouter.md"]) {
     assert.ok(pkg.files.includes(entry), `${entry} must be included in npm files`);
   }
   assert.ok(fs.existsSync(path.join(root, "NOTICE")));
@@ -40,6 +40,7 @@ test("npm package does not publish Python caches", () => {
     stdio: ["ignore", "pipe", "pipe"],
   });
   const files = JSON.parse(output)[0].files.map((entry) => entry.path);
+  assert.ok(files.includes("docs/orcarouter.md"), "provider guide must ship with the README link");
   assert.equal(files.some((file) => /(?:^|\/)(__pycache__|\.pytest_cache)(?:\/|$)|\.py[cod]$/.test(file)), false,
     "Python caches must be excluded from npm package");
 });
